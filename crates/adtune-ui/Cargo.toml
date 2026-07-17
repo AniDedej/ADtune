@@ -1,0 +1,49 @@
+[package]
+name = "adtune-ui"
+description = "Cross-platform Slint desktop UI for ADtune"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+# Off-screen PNG capture via Slint's software renderer (for docs / CI review).
+screenshot = ["dep:png", "slint/renderer-software"]
+
+[dependencies]
+adtune-core.workspace = true
+# Default features keep the GPU FemtoVG renderer as the primary. `renderer-software`
+# additionally compiles in Slint's pure-Rust software renderer so we can *explicitly*
+# select it. Slint builds renderers lazily (all `new_suspended`), so it can't fall back
+# on its own when FemtoVG only fails at window-resume time on machines without a usable
+# OpenGL 2.0 driver (VMs / RDP / basic display adapters → "Could not locate
+# glCreateShader"); `main.rs` detects that failure and relaunches with
+# SLINT_BACKEND=winit-software. Pure Rust, so no extra build deps.
+slint = { version = "1", features = ["renderer-software"] }
+png = { version = "0.17", optional = true }
+# Native Open/Save dialogs. On Linux, default features = xdg-portal + wayland
+# (dlopens libdbus at runtime — no GTK build dep, matching the fontconfig-dlopen
+# approach); on Windows = native Win32 Common Item Dialog. Adds only `pollster`.
+rfd = "0.17"
+
+# Slint enumerates fonts via `fontique`, which on Linux/FreeBSD links
+# libfontconfig at build time. Enabling its `fontconfig-dlopen` feature makes it
+# load the (always-present) system libfontconfig at runtime instead, so the
+# build needs no `libfontconfig-dev` / `fontconfig.pc`. Unifies with the copy
+# Slint pulls in. No effect on Windows/macOS.
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+fontique = { version = "0.10", features = ["fontconfig-dlopen"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+adtune-pipewire = { path = "../adtune-pipewire" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+adtune-windows = { path = "../adtune-windows" }
+rfd = { version = "0.17", features = ["common-controls-v6"] }
+
+[build-dependencies]
+slint-build = "1"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

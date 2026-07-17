@@ -1,0 +1,46 @@
+[package]
+name = "adtune-apo"
+description = "ADtune's own Windows Audio Processing Object (system-wide audio EQ, fully self-contained)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+# A COM in-process server DLL. Empty on non-Windows (the whole crate is cfg'd),
+# so `cargo build`/`cargo test` on Linux stays green; the real code is verified
+# with `cargo check --target x86_64-pc-windows-msvc`.
+[lib]
+crate-type = ["cdylib"]
+
+# DSP/config logic (processor.rs) is portable and unit-tested on Linux.
+[dependencies]
+adtune-core.workspace = true
+arc-swap.workspace = true
+
+# COM/APO glue (apo.rs) is Windows-only. `#[implement]` comes from
+# windows::core (no feature needed in windows-rs 0.62). Win32_Media_Audio_Apo
+# transitively enables Win32_Media_Audio.
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio_Apo",
+    "Win32_System_Com",
+    # OutputDebugStringW — the APO's only viable log channel: it runs inside
+    # audiodg.exe (restricted, no console). View with Sysinternals DebugView
+    # ("Capture Global Win32", as admin).
+    "Win32_System_Diagnostics_Debug",
+    # APO_NOTIFICATION (IAudioProcessingObjectNotifications) embeds PROPERTYKEY
+    # types that windows-rs gates behind this feature.
+    "Win32_UI_Shell_PropertiesSystem",
+    # Config live-reload: directory change notifications + the bounded wait
+    # (FindFirstChangeNotificationW / WaitForSingleObject).
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+] }
+windows-core.workspace = true
+
+# Embeds VERSIONINFO into the DLL; host-gated like adtune-ui's (the build
+# script's cfg(windows) matches the host, the env check inside matches the target).
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

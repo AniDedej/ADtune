@@ -1,0 +1,2 @@
+Preamp: nan dB
+Filter 1: ON PK Fc 10000 Hz Gain 12 dB Q 0.7

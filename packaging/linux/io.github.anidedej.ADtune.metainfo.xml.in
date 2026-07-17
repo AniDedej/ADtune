@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metainfo: what software centers (GNOME Software, App Center,
+     Flathub) read for the display name, license, developer, and description.
+     @VERSION@ / @DATE@ are substituted by packaging/linux/build-deb.sh. -->
+<component type="desktop-application">
+  <id>io.github.anidedej.ADtune</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>ADtune</name>
+  <summary>System-wide audio calibration</summary>
+  <developer id="io.github.anidedej">
+    <name>Antonio DEDEJ</name>
+  </developer>
+  <description>
+    <p>
+      ADtune applies a parametric-EQ correction to all system audio using
+      PipeWire, before it reaches whatever you're listening on: headphones,
+      speakers, a USB DAC. It ships with a catalog of thousands of measured
+      headphone corrections to start from, and you can build your own curve
+      for any device, with a live frequency-response graph and tone controls.
+    </p>
+    <ul>
+      <li>8,850 headphone corrections built in, searchable by model</li>
+      <li>Build your own curve for speakers or any other device</li>
+      <li>Live frequency-response graph and draggable band editor</li>
+      <li>Tone controls: correction amount, bass, tilt</li>
+      <li>Level-matched A/B bypass and safe headroom</li>
+      <li>Import and export ParametricEQ and .adtuneprofile files</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.anidedej.ADtune.desktop</launchable>
+  <url type="homepage">https://github.com/AniDedej/ADtune</url>
+  <url type="bugtracker">https://github.com/AniDedej/ADtune/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Calibrating a headphone profile with the live frequency-response editor</caption>
+      <image>https://raw.githubusercontent.com/AniDedej/ADtune/main/docs/screenshots/main.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>

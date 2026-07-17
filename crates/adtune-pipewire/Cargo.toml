@@ -1,0 +1,22 @@
+[package]
+name = "adtune-pipewire"
+description = "Linux (PipeWire) calibration backend for ADtune"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+adtune-core.workspace = true
+libc = "0.2"
+pipewire = "0.10"
+serde.workspace = true
+serde_json.workspace = true
+# Blocking D-Bus for the Flatpak background portal; already in the app's
+# dependency tree via rfd's xdg-portal file dialogs.
+zbus = { version = "5", features = ["blocking-api"] }
+
+[[bin]]
+name = "adtune-service"
+path = "src/bin/adtune-service.rs"

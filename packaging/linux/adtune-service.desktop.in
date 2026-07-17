@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ADtune Calibration Service
+Comment=Keeps ADtune audio calibration active
+Exec=@BINDIR@/adtune-service
+Icon=io.github.anidedej.ADtune
+Terminal=false
+NoDisplay=true

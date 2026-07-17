@@ -1,0 +1,31 @@
+[package]
+name = "adtune-windows"
+description = "ADtune Windows control-plane (drives the ADtune APO)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+adtune-core.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+# Win32_UI_Shell is auto-enabled by its child _PropertiesSystem; Win32_Foundation
+# is enabled transitively by Media_Audio/System_Com. Win32_System_Variant IS
+# required (PropVariantToStringAlloc + IPropertyStore::GetValue). The last three
+# power the UAC self-elevation (ShellExecuteExW → SHELLEXECUTEINFOW needs
+# System_Registry; wait/exit-code needs System_Threading).
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_Devices_FunctionDiscovery",
+] }

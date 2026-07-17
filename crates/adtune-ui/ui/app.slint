@@ -1,0 +1,736 @@
+import { LineEdit, Slider, CheckBox, ListView, ComboBox, Button, Switch, Palette } from "std-widgets.slint";
+
+export struct AxisLabel {
+    text: string,
+    frac: float,
+}
+
+// A draggable correction-band handle, positioned in plot logical pixels.
+// kind: 0 = Peak, 1 = Low shelf, 2 = High shelf (marker tint only).
+// Selection is driven by the `selected-band` property (not a per-row field) so
+// selecting/dragging never rebuilds the model and the pointer grab survives.
+export struct BandHandle {
+    x: float,
+    y: float,
+    idx: int,
+    kind: int,
+}
+
+export struct ResultItem {
+    key: string,
+    name: string,
+    sub: string,
+    selected: bool,
+    deletable: bool,
+}
+
+component ToneRow inherits Rectangle {
+    in property <string> label;
+    in property <float> minimum;
+    in property <float> maximum;
+    in-out property <float> value;
+    in property <string> readout;
+    callback changed(float);
+    height: 34px;
+    HorizontalLayout {
+        spacing: 10px;
+        Text {
+            text: root.label;
+            color: #d0d3da;
+            font-size: 12px;
+            vertical-alignment: center;
+            width: 120px;
+        }
+        Slider {
+            minimum: root.minimum;
+            maximum: root.maximum;
+            value: root.value;
+            changed(v) => {
+                root.value = v;
+                root.changed(v);
+            }
+        }
+        Text {
+            text: root.readout;
+            color: #9aa0b0;
+            font-size: 12px;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            width: 56px;
+        }
+    }
+}
+
+component Card inherits Rectangle {
+    background: #1b1b22;
+    border-radius: 12px;
+}
+
+// A small translucent icon button that floats over the graph.
+component IconButton inherits Rectangle {
+    out property <bool> has-hover: ta.has-hover;
+    callback clicked;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: ta.has-hover ? #3a5f8a : #20222ee6;
+    border-width: 1px;
+    border-color: #ffffff26;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A dialog action button (neutral / primary / destructive).
+component DialogButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    in property <bool> destructive;
+    callback clicked;
+    height: 36px;
+    min-width: 96px;
+    border-radius: 8px;
+    background: root.destructive
+        ? (btn.has-hover ? #d0453a : #c0392b)
+        : (root.primary ? (btn.has-hover ? #4a9eff : #3a86d4)
+                        : (btn.has-hover ? #34363f : #2a2b33));
+    HorizontalLayout {
+        alignment: center;
+        padding-left: 16px;
+        padding-right: 16px;
+        Text { text: root.text; color: #ffffff; font-size: 13px; vertical-alignment: center; }
+    }
+    btn := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component MainWindow inherits Window {
+    // ADtune's design is dark-only: every custom surface hard-codes dark
+    // colors, so the std-widgets must not follow a light system scheme (the
+    // mix produces unreadable labels and mismatched accents). Pin the widget
+    // palette to dark on every platform.
+    init => {
+        Palette.color-scheme = ColorScheme.dark;
+    }
+
+    // "ADtune - <profile>" while a profile is loaded; set from Rust wherever
+    // the current profile changes.
+    in property <string> window-title: "ADtune";
+    title: root.window-title;
+    // The title-bar/taskbar icon: windowing systems don't reuse the exe's
+    // embedded icon resource, the window must carry its own.
+    icon: @image-url("icon.png");
+    preferred-width: 980px;
+    preferred-height: 660px;
+    min-width: 820px;
+    min-height: 600px;
+    background: #131318;
+
+    // graph
+    in property <string> curve-commands;
+    in property <string> fill-commands;
+    in property <string> grid-commands;
+    in property <string> zero-commands;
+    in property <[AxisLabel]> x-labels;
+    in property <[AxisLabel]> y-labels;
+    in property <string> graph-title;
+    in property <string> graph-caption;
+
+    // on-graph band editing
+    in property <bool> edit-mode: false;
+    in property <[BandHandle]> band-handles;
+    in-out property <int> selected-band: -1;
+    in property <bool> has-selection: false;
+    in-out property <int> sel-type: 0;      // 0 Peak / 1 Low shelf / 2 High shelf
+    in-out property <float> sel-q: 1.0;
+    in property <string> sel-label: "";
+
+    // catalog + tone
+    in property <[ResultItem]> results;
+    // Count line under the search box ("8,850 models" / "142 matches").
+    in property <string> results-count;
+    in-out property <float> wet: 100;
+    in-out property <float> bass: 0;
+    in-out property <float> tilt: 0;
+    in-out property <bool> headroom: true;
+
+    // modal dialog (confirmations + notices)
+    in property <bool> dialog-open: false;
+    in property <string> dialog-title;
+    in property <string> dialog-message;
+    in property <string> dialog-confirm-label: "OK";
+    in property <string> dialog-cancel-label: "";   // empty = info dialog (no Cancel)
+    in property <bool> dialog-destructive: false;
+    callback dialog-confirm();
+    callback dialog-cancel();
+
+    // backend / system output
+    in property <[string]> output-names;
+    in-out property <int> selected-output: -1;
+    in property <string> status-text: "";
+    in-out property <bool> is-active: false;
+    in-out property <bool> correction-on: true;
+    in property <bool> busy: false;
+
+    // current plot size in logical pixels (drives the graph's pixel-space paths)
+    out property <float> plot-px-w: plot.width / 1px;
+    out property <float> plot-px-h: plot.height / 1px;
+
+    callback search(string);
+    callback select-profile(string);
+    callback tone-changed();
+    callback graph-resized(float, float);
+    callback apply();
+    callback set-enabled(bool);
+    callback set-correction(bool);
+    callback refresh-devices();
+    // band editing
+    callback toggle-edit();                  // enter/leave edit mode
+    callback reset-edit();                   // discard edits + leave edit mode
+    callback band-select(int);               // idx, or -1 to deselect
+    callback band-drag(int, float, float);   // idx, new-x-px, new-y-px (per `moved`)
+    callback band-drag-end();                // pointer up: push live + persist
+    callback plot-add-band(float, float);    // x-px, y-px of a double-click / add
+    callback band-remove();
+    callback band-q-scroll(int, float);      // idx, wheel delta-y (px): adjust Q
+    callback band-type-changed(int);
+    // profile library
+    callback import-profile();
+    callback export-profile();
+    callback delete-profile(string);         // library key
+
+    changed plot-px-w => { root.graph-resized(root.plot-px-w, root.plot-px-h); }
+    changed plot-px-h => { root.graph-resized(root.plot-px-w, root.plot-px-h); }
+    // Focus the key handler when a dialog opens so Escape cancels it.
+    changed dialog-open => { if (root.dialog-open) { key_scope.focus(); } }
+
+    // Off-screen key handler: Delete removes the selected band while editing.
+    // Text inputs (search box) consume Delete themselves, so this only fires when
+    // the graph has focus (handles/plot request it on interaction).
+    key_scope := FocusScope {
+        width: 0px;
+        height: 0px;
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if (root.dialog-open) {
+                if (event.text == Key.Escape) { root.dialog-cancel(); }
+                return accept; // modal: swallow keys while a dialog is open
+            }
+            if (event.text == Key.Delete && root.edit-mode && root.has-selection) {
+                root.band-remove();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    HorizontalLayout {
+        padding: 16px;
+        spacing: 16px;
+
+        // ================= LEFT: catalog =================
+        Card {
+            horizontal-stretch: 0;
+            min-width: 320px;
+            max-width: 320px;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 10px;
+                Text {
+                    text: "Profiles";
+                    color: #e6e8ee;
+                    font-size: 15px;
+                    font-weight: 700;
+                }
+                LineEdit {
+                    placeholder-text: "Search headphone models…";
+                    edited(t) => {
+                        root.search(t);
+                    }
+                }
+                Text {
+                    text: root.results-count;
+                    color: #868c9c;
+                    font-size: 11px;
+                }
+                ListView {
+                    vertical-stretch: 1;
+                    for item in root.results: Rectangle {
+                        height: 44px;
+                        background: touch.has-hover ? #ffffff10 : (item.selected ? #5cb6ff22 : transparent);
+                        border-radius: 6px;
+                        touch := TouchArea {
+                            clicked => {
+                                root.select-profile(item.key);
+                            }
+                        }
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 8px;
+                            spacing: 8px;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: item.name;
+                                    color: #e6e8ee;
+                                    font-size: 13px;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: item.sub;
+                                    color: item.deletable ? #c9a94a : #868c9c;
+                                    font-size: 11px;
+                                    overflow: elide;
+                                }
+                            }
+                            // delete (saved profiles only), shown on hover
+                            Rectangle {
+                                width: item.deletable ? 26px : 0px;
+                                vertical-stretch: 1;
+                                del := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.delete-profile(item.key); }
+                                }
+                                Text {
+                                    text: "✕";
+                                    color: del.has-hover ? #ff8080 : #7a8090;
+                                    font-size: 13px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    visible: item.deletable && (touch.has-hover || del.has-hover);
+                                }
+                            }
+                            Text {
+                                text: (item.selected && !item.deletable) ? "●" : "";
+                                color: #5cb6ff;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ================= RIGHT: graph + tone =================
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 12px;
+
+            // --- graph card ---
+            Card {
+                height: 220px;
+                plot := Rectangle {
+                    x: 46px;
+                    y: 26px;
+                    width: parent.width - 62px;
+                    height: parent.height - 54px;
+                    // Background: hover reveals the edit button; in edit mode, click
+                    // deselects, double-click adds, scroll tunes the selected band's Q.
+                    plot_bg := TouchArea {
+                        width: 100%; height: 100%;
+                        clicked => { if (root.edit-mode) { root.band-select(-1); key_scope.focus(); } }
+                        double-clicked => { if (root.edit-mode) { root.plot-add-band(self.mouse-x / 1px, self.mouse-y / 1px); key_scope.focus(); } }
+                        scroll-event(ev) => {
+                            if (root.edit-mode && root.selected-band >= 0) {
+                                root.band-q-scroll(root.selected-band, ev.delta-y / 1px);
+                                key_scope.focus();
+                                return EventResult.accept;
+                            }
+                            return EventResult.reject;
+                        }
+                    }
+                    Path {
+                        width: 100%; height: 100%;
+                        viewbox-width: root.plot-px-w; viewbox-height: root.plot-px-h;
+                        commands: root.grid-commands;
+                        stroke: #ffffff14;
+                        stroke-width: 1px;
+                    }
+                    Path {
+                        width: 100%; height: 100%;
+                        viewbox-width: root.plot-px-w; viewbox-height: root.plot-px-h;
+                        commands: root.zero-commands;
+                        stroke: #ffffff3a;
+                        stroke-width: 1.5px;
+                    }
+                    Path {
+                        width: 100%; height: 100%;
+                        viewbox-width: root.plot-px-w; viewbox-height: root.plot-px-h;
+                        commands: root.fill-commands;
+                        fill: #5cb6ff22;
+                    }
+                    Path {
+                        width: 100%; height: 100%;
+                        viewbox-width: root.plot-px-w; viewbox-height: root.plot-px-h;
+                        commands: root.curve-commands;
+                        stroke: #5cb6ff;
+                        stroke-width: 2.5px;
+                    }
+                    // Floating editor panel (edit mode + a selected band). Placed
+                    // UNDER the handles so a band handle sitting in this bottom strip
+                    // still grabs the pointer first (its controls never steal a drag).
+                    if root.edit-mode && root.has-selection: Rectangle {
+                        x: 8px;
+                        y: parent.height - self.height - 8px;
+                        width: parent.width - 16px;
+                        height: 38px;
+                        border-radius: 9px;
+                        background: #0c0e15d8;
+                        border-width: 1px;
+                        border-color: #ffffff26;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 8px;
+                            spacing: 10px;
+                            Text {
+                                text: root.sel-label;
+                                color: #d6d9e2;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+                            ComboBox {
+                                model: ["Peak", "Low shelf", "High shelf"];
+                                current-index <=> root.sel-type;
+                                selected => { root.band-type-changed(self.current-index); key_scope.focus(); }
+                            }
+                            Rectangle {
+                                width: 66px;
+                                q_ta := TouchArea {
+                                    scroll-event(ev) => {
+                                        root.band-q-scroll(root.selected-band, ev.delta-y / 1px);
+                                        return EventResult.accept;
+                                    }
+                                }
+                                Text {
+                                    text: "Q \{round(root.sel-q * 100) / 100}";
+                                    color: q_ta.has-hover ? #cfd3dc : #9aa0b0;
+                                    font-size: 12px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            // Delete-band button: trash icon, turns red on hover.
+                            Rectangle {
+                                width: 30px;
+                                border-radius: 7px;
+                                background: rm_ta.has-hover ? #c0392b : transparent;
+                                rm_ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.band-remove(); }
+                                }
+                                Path {
+                                    x: parent.width / 2 - 8px;
+                                    y: parent.height / 2 - 8px;
+                                    width: 16px; height: 16px;
+                                    viewbox-width: 24; viewbox-height: 24;
+                                    commands: "M6 7 L18 7 L16.5 21 L7.5 21 Z M4.5 7 L19.5 7 M9.5 7 L9.5 4.5 L14.5 4.5 L14.5 7 M10 10.5 L10 17.5 M14 10.5 L14 17.5";
+                                    stroke: rm_ta.has-hover ? #ffffff : #e07a7a;
+                                    stroke-width: 1.5px;
+                                    fill: transparent;
+                                }
+                            }
+                        }
+                    }
+                    // Floating hint (edit mode, nothing selected).
+                    if root.edit-mode && !root.has-selection: Rectangle {
+                        x: 8px;
+                        y: parent.height - self.height - 8px;
+                        width: parent.width - 16px;
+                        height: 28px;
+                        border-radius: 9px;
+                        background: #0c0e15cc;
+                        Text {
+                            text: "Drag a point to reshape · double-click to add a band · scroll a point to change its Q";
+                            color: #9aa0b0;
+                            font-size: 11px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                    // Draggable band handles (edit mode only — the model is empty
+                    // otherwise). Above the panel so they always grab the pointer first.
+                    for h[i] in root.band-handles: Rectangle {
+                        x: h.x * 1px - 7px;
+                        y: h.y * 1px - 7px;
+                        width: 14px; height: 14px;
+                        border-radius: 7px;
+                        background: h.idx == root.selected-band ? #ffd166 : (h.kind == 0 ? #5cb6ff : #7ee0a8);
+                        border-width: 2px;
+                        border-color: #131318;
+                        TouchArea {
+                            mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.grab;
+                            pointer-event(ev) => {
+                                if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                                    root.band-select(h.idx);
+                                    key_scope.focus();
+                                }
+                                if (ev.kind == PointerEventKind.up) {
+                                    root.band-drag-end();
+                                }
+                            }
+                            moved => {
+                                root.band-drag(h.idx, (parent.x + self.mouse-x) / 1px, (parent.y + self.mouse-y) / 1px);
+                            }
+                            scroll-event(ev) => {
+                                root.band-q-scroll(h.idx, ev.delta-y / 1px);
+                                key_scope.focus();
+                                return EventResult.accept;
+                            }
+                        }
+                    }
+                    // Reset (revert edits + leave edit mode), left of the toggle,
+                    // shown only in edit mode.
+                    reset_btn := IconButton {
+                        x: parent.width - self.width * 2 - 8px - 6px;
+                        y: 8px;
+                        visible: root.edit-mode;
+                        background: self.has-hover ? #8a6d3a : #20222ee6;
+                        clicked => { root.reset-edit(); }
+                        Path {
+                            x: 7px; y: 7px; width: 16px; height: 16px;
+                            viewbox-width: 24; viewbox-height: 24;
+                            commands: "M17.65 6.35 C16.2 4.9 14.21 4 12 4 C7.58 4 4.01 7.58 4.01 12 C4.01 16.42 7.57 20 12 20 C15.73 20 18.84 17.45 19.73 14 L17.65 14 C16.73 16.07 14.54 18 12 18 C8.69 18 6 15.31 6 12 C6 8.69 8.69 6 12 6 C13.66 6 15.14 6.69 16.22 7.78 L13 11 L20 11 L20 4 Z";
+                            fill: #e6e8ee;
+                        }
+                    }
+                    // Floating edit toggle (top-right), topmost so it is always
+                    // clickable; revealed on hover / shown in edit mode.
+                    edit_btn := IconButton {
+                        x: parent.width - self.width - 8px;
+                        y: 8px;
+                        background: root.edit-mode ? #2e6f52 : (self.has-hover ? #3a5f8a : #20222ee6);
+                        opacity: (root.edit-mode || plot_bg.has-hover || self.has-hover) ? 1.0 : 0.0;
+                        animate opacity { duration: 140ms; }
+                        clicked => { root.toggle-edit(); }
+                        // pencil = enter edit
+                        Path {
+                            x: 7px; y: 7px; width: 16px; height: 16px;
+                            viewbox-width: 24; viewbox-height: 24;
+                            commands: "M18 3 L21 6 L11.5 15.5 L8.5 12.5 Z M8.5 12.5 L11.5 15.5 L4 20 L3 21 Z";
+                            fill: #e6e8ee;
+                            visible: !root.edit-mode;
+                        }
+                        // check = done editing
+                        Path {
+                            x: 7px; y: 7px; width: 16px; height: 16px;
+                            viewbox-width: 24; viewbox-height: 24;
+                            commands: "M5 12.5 L10 17.5 L19 6.5";
+                            stroke: #dff5e6; stroke-width: 2.5px;
+                            visible: root.edit-mode;
+                        }
+                    }
+                }
+                for l in root.x-labels: Text {
+                    x: plot.x + plot.width * l.frac - 10px;
+                    y: plot.y + plot.height + 6px;
+                    text: l.text;
+                    color: #868c9c;
+                    font-size: 10px;
+                }
+                for l in root.y-labels: Text {
+                    x: 8px;
+                    y: plot.y + plot.height * l.frac - 7px;
+                    text: l.text;
+                    color: #868c9c;
+                    font-size: 10px;
+                }
+                Text {
+                    x: plot.x + 6px;
+                    y: 10px;
+                    text: root.graph-title;
+                    color: #e6e8ee;
+                    font-size: 13px;
+                    font-weight: 700;
+                }
+            }
+
+            // --- caption + profile actions (one compact row, never crops) ---
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: root.graph-caption;
+                    color: #868c9c;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Button { text: "Import"; clicked => { root.import-profile(); } }
+                Button { text: "Export"; clicked => { root.export-profile(); } }
+            }
+
+            // --- tone card ---
+            Card {
+                vertical-stretch: 0;
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 6px;
+                    Text {
+                        text: "Sound";
+                        color: #e6e8ee;
+                        font-size: 15px;
+                        font-weight: 700;
+                    }
+                    ToneRow {
+                        label: "Correction amount";
+                        minimum: 0; maximum: 100;
+                        value <=> root.wet;
+                        readout: "\{round(root.wet)}%";
+                        changed(v) => { root.tone-changed(); }
+                    }
+                    ToneRow {
+                        label: "Bass";
+                        minimum: -6; maximum: 6;
+                        value <=> root.bass;
+                        readout: "\{round(root.bass * 10) / 10} dB";
+                        changed(v) => { root.tone-changed(); }
+                    }
+                    ToneRow {
+                        label: "Tilt (dark ↔ bright)";
+                        minimum: -6; maximum: 6;
+                        value <=> root.tilt;
+                        readout: "\{round(root.tilt * 10) / 10} dB";
+                        changed(v) => { root.tone-changed(); }
+                    }
+                    CheckBox {
+                        text: "Safe Headroom (prevent clipping)";
+                        checked <=> root.headroom;
+                        toggled => {
+                            root.tone-changed();
+                        }
+                    }
+                }
+            }
+
+            // --- system output card ---
+            Card {
+                vertical-stretch: 0;
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 10px;
+                    HorizontalLayout {
+                        Text {
+                            text: "System output";
+                            color: #e6e8ee;
+                            font-size: 15px;
+                            font-weight: 700;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: root.status-text;
+                            color: #868c9c;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            horizontal-alignment: right;
+                            overflow: elide;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        ComboBox {
+                            model: root.output-names;
+                            current-index <=> root.selected-output;
+                            enabled: !root.busy;
+                            horizontal-stretch: 1;
+                        }
+                        Button {
+                            text: "Refresh";
+                            enabled: !root.busy;
+                            clicked => { root.refresh-devices(); }
+                        }
+                        Button {
+                            text: "Apply";
+                            primary: true;
+                            enabled: !root.busy && root.output-names.length > 0;
+                            clicked => { root.apply(); }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 24px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Calibration"; color: #d0d3da; font-size: 13px; vertical-alignment: center; }
+                            Switch {
+                                checked <=> root.is-active;
+                                enabled: !root.busy;
+                                toggled => { root.set-enabled(self.checked); }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Correction (A/B)"; color: #d0d3da; font-size: 13px; vertical-alignment: center; }
+                            Switch {
+                                checked <=> root.correction-on;
+                                enabled: !root.busy && root.is-active;
+                                toggled => { root.set-correction(self.checked); }
+                            }
+                        }
+                        Rectangle { }
+                    }
+                }
+            }
+
+            // filler pushes cards up when the window is tall
+            Rectangle { vertical-stretch: 1; }
+        }
+    }
+
+    // ===== modal dialog overlay (confirmations + notices), on top of all =====
+    if root.dialog-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #05060bcc;
+        // click outside the card dismisses (cancel)
+        TouchArea { clicked => { root.dialog-cancel(); } }
+        Rectangle {
+            width: 420px;
+            height: content.preferred-height;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: #1e1f27;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: #ffffff22;
+            // swallow clicks so clicking the card itself doesn't dismiss it
+            TouchArea { }
+            content := VerticalLayout {
+                padding: 22px;
+                spacing: 14px;
+                Text {
+                    text: root.dialog-title;
+                    color: #f0f2f6;
+                    font-size: 16px;
+                    font-weight: 700;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: root.dialog-message;
+                    color: #aab0be;
+                    font-size: 13px;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle { }
+                    if root.dialog-cancel-label != "": DialogButton {
+                        text: root.dialog-cancel-label;
+                        clicked => { root.dialog-cancel(); }
+                    }
+                    DialogButton {
+                        text: root.dialog-confirm-label;
+                        primary: !root.dialog-destructive;
+                        destructive: root.dialog-destructive;
+                        clicked => { root.dialog-confirm(); }
+                    }
+                }
+            }
+        }
+    }
+}

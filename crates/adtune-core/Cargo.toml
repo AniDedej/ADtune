@@ -1,0 +1,15 @@
+[package]
+name = "adtune-core"
+description = "Portable DSP, profile, and catalog core for ADtune audio calibration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+# Ship the embedded catalog if the crate is ever packaged/vendored/published.
+include = ["assets/**", "src/**", "tests/**"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+flate2.workspace = true

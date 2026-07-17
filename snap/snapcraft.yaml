@@ -1,0 +1,92 @@
+# Snap recipe for ADtune (strict confinement).
+#
+# Build + install locally:
+#   snapcraft
+#   sudo snap install --dangerous ./adtune_*.snap
+#   sudo snap connect adtune:pipewire
+#
+# The `pipewire` interface grants native PipeWire socket access and is NOT
+# auto-connected by default — until the store approves auto-connection, users
+# must run the `snap connect` command above once. The calibration daemon
+# writes its own autostart entry (matched by `autostart:` below) so snapd
+# restores calibration at login.
+name: adtune
+title: ADtune
+base: core24
+adopt-info: adtune
+summary: System-wide audio calibration
+website: https://github.com/AniDedej/ADtune
+source-code: https://github.com/AniDedej/ADtune
+contact: https://github.com/AniDedej/ADtune/issues
+issues: https://github.com/AniDedej/ADtune/issues
+icon: packaging/linux/io.github.anidedej.ADtune.svg
+description: |
+  ADtune applies a parametric-EQ correction to all system audio using
+  PipeWire, before it reaches whatever you're listening on: headphones,
+  speakers, a USB DAC. It ships with a catalog of thousands of measured
+  headphone corrections to start from, and you can build your own curve for
+  any device, with a live frequency-response graph and tone controls.
+
+  Native PipeWire access requires connecting the pipewire interface once:
+
+      sudo snap connect adtune:pipewire
+
+grade: stable
+confinement: strict
+license: MIT
+
+apps:
+  adtune:
+    command: bin/adtune-ui
+    # Exposes the launcher to the host: snapd only exports desktop files
+    # that snapcraft places in meta/gui, which this declaration does.
+    desktop: usr/share/applications/adtune.desktop
+    command-chain: [bin/pipewire-env]
+    extensions: [gnome]
+    plugs: [audio-playback, pipewire]
+  adtune-service:
+    command: bin/adtune-service
+    command-chain: [bin/pipewire-env]
+    autostart: adtune-service.desktop
+    plugs: [audio-playback, pipewire]
+
+parts:
+  adtune:
+    # nil + an explicit rustup bootstrap: the core24 rust plugin demands its
+    # own rust-deps part layout, and pinning the toolchain here is simpler.
+    plugin: nil
+    # git-clone the source instead of copying the working tree: the build
+    # needs only tracked files, never a multi-GB local target/ directory.
+    source: .
+    source-type: git
+    build-packages:
+      - curl
+      - pkg-config
+      - libpipewire-0.3-dev
+      - libclang-dev
+    stage-packages:
+      - libpipewire-0.3-0
+    override-build: |
+      export RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.cargo"
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
+        sh -s -- -y --profile minimal --default-toolchain stable
+      export PATH="$HOME/.cargo/bin:$PATH"
+      cargo build --release --locked -p adtune-ui -p adtune-pipewire
+      # snapd points XDG_RUNTIME_DIR at a snap-private subdirectory, but the
+      # PipeWire socket lives in the real runtime dir one level up; libpipewire
+      # (and adtune) honour PIPEWIRE_RUNTIME_DIR, exported by this wrapper.
+      install -d "$CRAFT_PART_INSTALL/bin"
+      cat > "$CRAFT_PART_INSTALL/bin/pipewire-env" <<'WRAP'
+      #!/bin/sh
+      export PIPEWIRE_RUNTIME_DIR="${PIPEWIRE_RUNTIME_DIR:-$(dirname "$XDG_RUNTIME_DIR")}"
+      exec "$@"
+      WRAP
+      chmod 755 "$CRAFT_PART_INSTALL/bin/pipewire-env"
+      install -Dm755 target/release/adtune-ui "$CRAFT_PART_INSTALL/bin/adtune-ui"
+      install -Dm755 target/release/adtune-service "$CRAFT_PART_INSTALL/bin/adtune-service"
+      install -Dm644 packaging/linux/io.github.anidedej.ADtune.svg \
+        "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/apps/io.github.anidedej.ADtune.svg"
+      install -d "$CRAFT_PART_INSTALL/usr/share/applications"
+      sed "s|@BINDIR@|/snap/bin|g; s|@ICON@|\${SNAP}/usr/share/icons/hicolor/scalable/apps/io.github.anidedej.ADtune.svg|g" \
+        packaging/linux/adtune.desktop.in > "$CRAFT_PART_INSTALL/usr/share/applications/adtune.desktop"
+      craftctl set version="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"

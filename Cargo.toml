@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = ["crates/adtune-core", "crates/adtune-cli", "crates/adtune-ui", "crates/adtune-pipewire", "crates/adtune-windows", "crates/adtune-apo"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+authors = ["Antonio DEDEJ"]
+description = "System-wide audio calibration for any output device"
+repository = "https://github.com/AniDedej/ADtune"
+
+# Shared external + internal dependencies, versioned once. Crates opt in with
+# `serde.workspace = true` etc.; Windows crates add their own `features` locally
+# (Cargo merges the workspace version with per-crate features).
+[workspace.dependencies]
+adtune-core = { path = "crates/adtune-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+flate2 = "1"
+arc-swap = "1"
+windows = "0.62"
+windows-core = "0.62"
+
+# Thin LTO keeps release builds fast (the DSP runs in the OS audio engine, so
+# full-LTO gains here are negligible) — important because installs build from source.
+[profile.release]
+lto = "thin"
+strip = true

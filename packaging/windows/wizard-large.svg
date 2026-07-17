@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="164" height="314" viewBox="0 0 164 314" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5faff"/>
+      <stop offset="1" stop-color="#dcedfb"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b7bff"/>
+      <stop offset="1" stop-color="#0aa6b8"/>
+    </linearGradient>
+    <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.04"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="164" height="314" fill="url(#bg)"/>
+  <!-- large, very light response-curve motif sweeping the lower half -->
+  <path d="M -10 250 C 25 200, 55 195, 75 230 S 110 300, 130 245 S 160 180, 200 215"
+        fill="none" stroke="#2b7bff" stroke-opacity="0.14" stroke-width="14"
+        stroke-linecap="round"/>
+  <!-- the app tile, centered, upper third -->
+  <g transform="translate(34,68) scale(0.75)">
+    <rect x="6" y="6" width="116" height="116" rx="26" fill="url(#tile)"/>
+    <g stroke="#ffffff" stroke-opacity="0.18" stroke-width="2">
+      <line x1="22" y1="64" x2="106" y2="64"/>
+    </g>
+    <g stroke="#ffffff" stroke-opacity="0.12" stroke-width="1.5">
+      <line x1="40" y1="26" x2="40" y2="102"/>
+      <line x1="64" y1="26" x2="64" y2="102"/>
+      <line x1="88" y1="26" x2="88" y2="102"/>
+    </g>
+    <path d="M22 64 C 30 40, 38 38, 48 52 S 62 82, 72 60 S 88 30, 106 50 L 106 64 L 22 64 Z"
+          fill="url(#fill)"/>
+    <path d="M22 64 C 30 40, 38 38, 48 52 S 62 82, 72 60 S 88 30, 106 50"
+          fill="none" stroke="#ffffff" stroke-width="5.5"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

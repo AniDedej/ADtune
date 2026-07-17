@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=ADtune
+GenericName=Audio Calibration
+Comment=System-wide audio calibration
+Exec=@BINDIR@/adtune
+Icon=@ICON@
+Terminal=false
+StartupWMClass=io.github.anidedej.ADtune
+Categories=AudioVideo;Audio;
+Keywords=calibration;equalizer;EQ;audio;headphones;speakers;
+# false: the Slint/winit window doesn't emit a startup-complete notification, so
+# a "true" here leaves the launch (busy) cursor spinning until the compositor
+# times out. The window maps instantly and is matched to the dock via app_id.
+StartupNotify=false

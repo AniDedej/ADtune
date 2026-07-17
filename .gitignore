@@ -1,0 +1,8 @@
+# Build output
+/target
+
+# Packaged installers
+/dist
+
+# Snap build artifacts
+*.snap

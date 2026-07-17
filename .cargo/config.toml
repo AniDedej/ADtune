@@ -1,0 +1,11 @@
+# Statically link the MSVC C runtime for Windows builds.
+#
+# `adtune_apo.dll` is loaded into `audiodg.exe` — the protected Windows audio-engine
+# process, which has a restricted DLL search path. A dynamic dependency on
+# `vcruntime140.dll` / the Universal CRT can make audiodg silently fail to load the
+# APO (it stays *registered* but never runs). Static linking makes the DLL
+# self-contained, and also frees `adtune.exe` from needing the VC++ redistributable.
+#
+# Scoped to the MSVC target only, so Linux/macOS builds are unaffected.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

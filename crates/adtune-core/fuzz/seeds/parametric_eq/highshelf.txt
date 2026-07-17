@@ -1,0 +1,1 @@
+Filter 1: ON HSC Fc 18000 Hz Gain -4 dB Q 0.5
